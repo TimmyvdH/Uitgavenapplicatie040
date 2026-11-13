@@ -179,7 +179,7 @@
   <section id="view-fixed" class="hidden">
     <div class="card">
       <h2 id="r-formtitle">Nieuwe vaste post</h2>
-      <p class="hint" style="margin-top:0">Wordt elke maand automatisch geboekt op de dag die je kiest.</p>
+      <p class="hint" style="margin-top:0">Wordt automatisch geboekt op de dag en het ritme dat je kiest.</p>
       <div class="toggle">
         <button id="r-t-out" class="on-out">Uitgave</button>
         <button id="r-t-in">Inkomst</button>
@@ -189,13 +189,17 @@
       <label for="r-cat">Categorie</label>
       <select id="r-cat"></select>
       <div id="r-goalwrap" class="hidden"><label for="r-goal">Voor doel</label><select id="r-goal"></select></div>
+      <label for="r-every">Hoe vaak?</label>
+      <select id="r-every">
+        <option value="1">Elke maand</option>
+        <option value="3">Elke 3 maanden (kwartaal)</option>
+        <option value="6">Elk half jaar</option>
+        <option value="12">Elk jaar</option>
+      </select>
       <label for="r-day">Dag van de maand</label>
       <select id="r-day"></select>
-      <div id="r-startwrap"><label for="r-start">Eerste boeking</label>
-      <select id="r-start">
-        <option value="0">Deze maand</option>
-        <option value="1">Volgende maand</option>
-      </select></div>
+      <div id="r-startwrap"><label for="r-start" id="r-startlabel">Eerste boeking in</label>
+      <select id="r-start"></select></div>
       <label for="r-note">Omschrijving (optioneel)</label>
       <input id="r-note" placeholder="Bijv. Loon Ambity" autocomplete="off">
       <button class="btn" id="r-save">Vaste post toevoegen</button>
@@ -235,7 +239,7 @@
       <button class="btn" id="b-export">Back-up downloaden</button>
       <button class="btn secondary" id="b-import">Back-up terugzetten</button>
       <input type="file" id="b-file" accept="application/json,.json" class="hidden">
-      <p class="hint" style="text-align:center;margin:14px 0 0">Kasboek · versie 8 (13 nov 2026)</p>
+      <p class="hint" style="text-align:center;margin:14px 0 0">Kasboek · versie 9 (14 nov 2026)</p>
     </div>
   </section>
 </main>
@@ -554,7 +558,7 @@ function runRules() {
       const date = ruleDate(r.next, r.day);
       if (date > now) break;
       txs.push({ id: newId(), book: bookOf(r), type: r.type, cat: r.cat, amount: r.amount, date, note: r.note, rule: r.id, goal: r.goal });
-      r.next = addMonths(r.next, 1); n++;
+      r.next = addMonths(r.next, r.every || 1); n++;
     }
   }
   if (n) { celebrateNew(before); celebrateMonthly(); }
@@ -574,22 +578,34 @@ $("#r-t-out").onclick = () => setRType("uitgave");
 $("#r-t-in").onclick = () => setRType("inkomst");
 $("#r-day").innerHTML = Array.from({ length: 31 }, (_, i) =>
   `<option value="${i + 1}">${i + 1}${i + 1 > 28 ? " (of laatste dag van de maand)" : ""}</option>`).join("");
+function fillStartMonths() {
+  const base = today().slice(0, 7);
+  $("#r-start").innerHTML = Array.from({ length: 12 }, (_, i) => {
+    const ym = addMonths(base, i);
+    return `<option value="${i}">${new Date(ym + "-01T12:00").toLocaleDateString("nl-NL", { month: "long", year: "numeric" })}${i === 0 ? " (deze maand)" : ""}</option>`;
+  }).join("");
+}
+fillStartMonths();
 setRType("uitgave");
 
 let editRule = null;
 function resetRuleForm() {
   editRule = null;
-  $("#r-amount").value = ""; $("#r-note").value = "";
+  $("#r-amount").value = ""; $("#r-note").value = ""; $("#r-every").value = "1"; fillStartMonths(); $("#r-start").value = "0";
   $("#r-save").textContent = "Vaste post toevoegen"; $("#r-cancel").classList.add("hidden");
-  $("#r-startwrap").classList.remove("hidden"); $("#r-formtitle").textContent = "Nieuwe vaste post";
+  $("#r-startlabel").textContent = "Eerste boeking in"; $("#r-formtitle").textContent = "Nieuwe vaste post";
 }
 function startEditRule(id) {
   const r = rules.find(x => x.id === id); if (!r) return;
   setRType(r.type); $("#r-cat").value = r.cat; fillGoalPick("r");
   if (r.goal) $("#r-goal").value = r.goal;
   $("#r-amount").value = centsToInput(r.amount); $("#r-day").value = r.day; $("#r-note").value = r.note || "";
+  $("#r-every").value = String(r.every || 1);
+  fillStartMonths();
+  const [y0, m0] = today().slice(0, 7).split("-").map(Number), [y1, m1] = r.next.split("-").map(Number);
+  $("#r-start").value = String(Math.min(11, Math.max(0, (y1 - y0) * 12 + (m1 - m0))));
   editRule = id;
-  $("#r-startwrap").classList.add("hidden"); $("#r-formtitle").textContent = "Vaste post bewerken";
+  $("#r-startlabel").textContent = "Volgende boeking in"; $("#r-formtitle").textContent = "Vaste post bewerken";
   $("#r-save").textContent = "Wijziging opslaan"; $("#r-cancel").classList.remove("hidden");
   window.scrollTo(0, 0);
 }
@@ -599,12 +615,13 @@ $("#r-save").onclick = () => {
   if (!amount) { toast("Vul een geldig bedrag in"); $("#r-amount").focus(); return; }
   if (editRule) {
     Object.assign(rules.find(x => x.id === editRule), { type: rType, cat: $("#r-cat").value, amount, day: +$("#r-day").value,
-      goal: pickedGoal("r"), note: $("#r-note").value.trim() });
+      goal: pickedGoal("r"), note: $("#r-note").value.trim(), every: +$("#r-every").value,
+      next: addMonths(today().slice(0, 7), +$("#r-start").value) });
     save(); resetRuleForm(); renderRules();
     toast("Wijziging opgeslagen · geldt vanaf de volgende boeking"); return;
   }
   rules.push({ id: newId(), book: mode, type: rType, cat: $("#r-cat").value, amount, day: +$("#r-day").value, goal: pickedGoal("r"),
-               note: $("#r-note").value.trim(), next: addMonths(today().slice(0, 7), +$("#r-start").value) });
+               note: $("#r-note").value.trim(), every: +$("#r-every").value, next: addMonths(today().slice(0, 7), +$("#r-start").value) });
   save();
   $("#r-amount").value = ""; $("#r-note").value = "";
   runRules(); renderRules();
@@ -617,12 +634,16 @@ function renderRules() {
   $("#r-list").innerHTML = sorted.map(r => {
     const cls = r.type === "inkomst" ? "in" : VERMOGEN.has(r.cat) ? "sv" : "out";
     const sign = r.type === "inkomst" ? "+" : "−";
-    return `<div class="tx"><div>${esc(CAT_LABEL[r.cat] || r.cat)}<small>Elke ${r.day}e${r.note ? " · " + esc(r.note) : ""}</small></div>
+    const ev = r.every || 1, nm = new Date(r.next + "-01T12:00").toLocaleDateString("nl-NL", { month: "short" });
+    const when = ev === 1 ? `Elke ${r.day}e` : `${{ 3: "Elk kwartaal", 6: "Elk half jaar", 12: "Elk jaar" }[ev] || `Elke ${ev} mnd`} op de ${r.day}e · volgende: ${nm}`;
+    return `<div class="tx"><div>${esc(CAT_LABEL[r.cat] || r.cat)}<small>${when}${r.note ? " · " + esc(r.note) : ""}</small></div>
       <div style="display:flex;align-items:center"><b class="${cls}">${sign} ${eur(r.amount)}</b>
       <button class="edit" data-id="${r.id}" aria-label="Bewerken">✏️</button>
       <button class="del" data-id="${r.id}" aria-label="Stoppen">🗑️</button></div></div>`;
   }).join("") + (() => {
-    const sum = f => mine.filter(f).reduce((s, r) => s + r.amount, 0);
+    const sum = f => mine.filter(f).reduce((s, r) => s + Math.round(r.amount / (r.every || 1)), 0);
+    const avgNote = mine.some(r => (r.every || 1) > 1)
+      ? `<p class="hint" style="margin:10px 0 0;font-size:12px">Posten per kwartaal of jaar zijn omgerekend naar een gemiddeld bedrag per maand.</p>` : "";
     const inc = sum(r => r.type === "inkomst");
     const out = sum(r => r.type === "uitgave" && !VERMOGEN.has(r.cat));
     const sv = sum(r => r.type === "uitgave" && VERMOGEN.has(r.cat));
@@ -633,6 +654,7 @@ function renderRules() {
       ${sv ? `<div class="row"><span>Vast sparen / beleggen</span><b class="sv">− ${eur(sv)}</b></div>` : ""}
       <div class="row" style="font-size:18px;margin-top:12px"><span><b>Balans per maand</b></span>
         <b class="${bal < 0 ? "out" : "in"}">${bal < 0 ? "−" : "+"} ${eur(Math.abs(bal))}</b></div>
+      ${avgNote}
     </div>`;
   })();
   $$("#r-list .edit").forEach(b => b.onclick = () => startEditRule(b.dataset.id));
