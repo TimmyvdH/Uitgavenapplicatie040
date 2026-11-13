@@ -550,24 +550,32 @@ $("#g-save").onclick = () => {
 
 const spentInMonth = (cat, ym) => txs.filter(t => bookOf(t) === mode && t.type === "uitgave" && t.cat === cat && t.date.startsWith(ym))
   .reduce((s, t) => s + t.amount, 0);
+// Optie C: een tekort van vorige maand gaat af van het budget van deze maand; overschot vervalt.
+// Werkt door zolang het tekort blijft bestaan (vanaf de maand waarin het budget is aangemaakt).
+function effTarget(g, ym) {
+  if (!g.created || ym <= g.created.slice(0, 7)) return g.target;
+  const prev = addMonths(ym, -1);
+  const over = spentInMonth(g.cat, prev) - effTarget(g, prev);
+  return Math.max(0, g.target - Math.max(0, over));
+}
 function budgetWarning(t, cat, date) {
   if (t !== "uitgave") return "";
   const b = goals.find(g => bookOf(g) === mode && g.kind === "budget" && g.cat === cat);
   if (!b) return "";
-  const spent = spentInMonth(cat, date.slice(0, 7));
-  if (spent > b.target) return `⚠️ Budget ${CAT_LABEL[cat]} overschreden met ${eur(spent - b.target)}`;
-  if (spent >= b.target * 0.8) return `Let op: nog ${eur(b.target - spent)} over voor ${CAT_LABEL[cat]}`;
+  const ym = date.slice(0, 7), spent = spentInMonth(cat, ym), lim = effTarget(b, ym);
+  if (spent > lim) return `⚠️ Budget ${CAT_LABEL[cat]} overschreden met ${eur(spent - lim)}`;
+  if (spent >= lim * 0.8) return `Let op: nog ${eur(lim - spent)} over voor ${CAT_LABEL[cat]}`;
   return "";
 }
 // Waarschuwingsbalken bovenaan Toevoegen: budgetten vanaf 80% (deze maand, huidige modus)
 function renderAlerts() {
   const ym = today().slice(0, 7);
   const items = goals.filter(g => bookOf(g) === mode && g.kind === "budget")
-    .map(g => ({ g, spent: spentInMonth(g.cat, ym) })).filter(x => x.spent >= x.g.target * 0.8)
-    .sort((a, b) => b.spent / b.g.target - a.spent / a.g.target);
-  $("#alerts").innerHTML = items.map(({ g, spent }) => spent > g.target
-    ? `<div class="alert red">🔴 <b>${esc(CAT_LABEL[g.cat])}</b>: ${eur(spent - g.target)} over je budget van ${eur(g.target)}</div>`
-    : `<div class="alert orange">🟠 <b>${esc(CAT_LABEL[g.cat])}</b>: nog ${eur(g.target - spent)} over van ${eur(g.target)}</div>`).join("");
+    .map(g => ({ g, spent: spentInMonth(g.cat, ym), lim: effTarget(g, ym) })).filter(x => x.spent >= x.lim * 0.8 && (x.spent > 0 || x.lim === 0))
+    .sort((a, b) => b.spent / (b.lim || 1) - a.spent / (a.lim || 1));
+  $("#alerts").innerHTML = items.map(({ g, spent, lim }) => spent > lim
+    ? `<div class="alert red">🔴 <b>${esc(CAT_LABEL[g.cat])}</b>: ${eur(spent - lim)} over je budget van ${eur(lim)}</div>`
+    : `<div class="alert orange">🟠 <b>${esc(CAT_LABEL[g.cat])}</b>: nog ${eur(lim - spent)} over van ${eur(lim)}</div>`).join("");
 }
 function monthsUntil(dateStr) {
   const [y, m] = today().split("-").map(Number), [dy, dm] = dateStr.split("-").map(Number);
@@ -584,10 +592,15 @@ function goalCard(g) {
       `<br>Totaal belegd: <b>${eur(sumCat("beleggen"))}</b>`;
   } else if (g.kind === "budget") {
     const ym = today().slice(0, 7), spent = spentInMonth(g.cat, ym);
-    pct = spent / g.target;
+    const lim = effTarget(g, ym), cut = g.target - lim;
+    pct = lim ? spent / lim : (spent ? 2 : 0);
     color = pct > 1 ? "var(--out)" : pct >= 0.8 ? "#d97706" : "var(--in)";
-    main = `${eur(spent)} <span style="color:var(--muted);font-weight:400">van ${eur(g.target)}</span>`;
-    meta = pct > 1 ? `<span class="out">${eur(spent - g.target)} over je budget</span>` : `Nog ${eur(g.target - spent)} over deze maand`;
+    main = `${eur(spent)} <span style="color:var(--muted);font-weight:400">van ${eur(lim)}</span>`;
+    meta = spent > lim ? `<span class="out">${eur(spent - lim)} over je budget</span> · gaat af van volgende maand` : `Nog ${eur(lim - spent)} over deze maand`;
+    if (cut > 0) {
+      const pm = new Date(addMonths(ym, -1) + "-01T12:00").toLocaleDateString("nl-NL", { month: "long" });
+      meta += `<br>Budget is ${eur(g.target)} − ${eur(cut)} tekort uit ${pm}`;
+    }
   } else {
     const saved = goalSaved(g);
     const left = g.target - saved;
