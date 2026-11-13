@@ -53,6 +53,9 @@
   h3 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
   .row { display: flex; justify-content: space-between; gap: 10px; font-size: 15px; margin: 8px 0 4px; }
   .bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+  .alert { border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; font-size: 15px; line-height: 1.4; }
+  .alert.red { background: #fee2e2; color: #991b1b; } .alert.orange { background: #ffedd5; color: #9a3412; }
+  @media (prefers-color-scheme: dark) { .alert.red { background: #450a0a; color: #fecaca; } .alert.orange { background: #431407; color: #fed7aa; } }
   .goal .meta { color: var(--muted); font-size: 13px; margin-top: 8px; line-height: 1.5; }
   .goal .bar { height: 10px; margin-top: 8px; }
   .goal .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -86,6 +89,7 @@
 <main>
   <!-- TOEVOEGEN -->
   <section id="view-add">
+    <div id="alerts"></div>
     <div class="card">
       <div class="toggle">
         <button id="t-out" class="on-out">Uitgave</button>
@@ -194,6 +198,14 @@
 </main>
 
 <div class="toast" id="toast"></div>
+<div id="party" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px">
+  <div class="card" style="text-align:center;max-width:340px;width:100%;margin:0">
+    <div style="font-size:64px;line-height:1">🎉</div>
+    <h2 style="font-size:22px;margin:12px 0 6px">Gefeliciteerd!</h2>
+    <p id="party-text" style="margin:0 0 4px;line-height:1.5"></p>
+    <button class="btn" id="party-ok">Top! 💪</button>
+  </div>
+</div>
 
 <nav>
   <button data-view="add" class="active"><span>➕</span>Toevoegen</button>
@@ -314,10 +326,12 @@ $("#f-save").onclick = () => {
   const amount = parseAmount($("#f-amount").value);
   if (!amount) { toast("Vul een geldig bedrag in"); $("#f-amount").focus(); return; }
   const date = $("#f-date").value || today();
+  const before = reachedSet();
   txs.push({ id: newId(), book: mode,
              type, cat: $("#f-cat").value, amount, date, note: $("#f-note").value.trim(), goal: pickedGoal("f") });
   save();
   $("#f-amount").value = ""; $("#f-note").value = "";
+  renderAlerts(); celebrateNew(before);
   toast(budgetWarning(type, $("#f-cat").value, date) ||
         `${type === "inkomst" ? "Inkomst" : "Uitgave"} van ${eur(amount)} opgeslagen`);
 };
@@ -404,7 +418,7 @@ function ruleDate(ym, day) {
 }
 // Boekt alle vaste posten waarvan de datum vandaag of eerder is (ook gemiste maanden).
 function runRules() {
-  const now = today(); let n = 0;
+  const now = today(); let n = 0; const before = reachedSet();
   for (const r of rules) {
     while (r.next <= now.slice(0, 7)) {
       const date = ruleDate(r.next, r.day);
@@ -413,6 +427,7 @@ function runRules() {
       r.next = addMonths(r.next, 1); n++;
     }
   }
+  if (n) celebrateNew(before);
   if (n) { save(); toast(`${n} vaste ${n === 1 ? "post" : "posten"} automatisch geboekt`); }
 }
 
@@ -472,6 +487,17 @@ function renderRules() {
 }
 
 // ---------- Doelen ----------
+const goalSaved = g => (g.start || 0) + txs.filter(t => t.goal === g.id).reduce((s, t) => s + t.amount, 0);
+const reachedSet = () => new Set(goals.filter(g => g.kind !== "budget" && goalSaved(g) >= g.target).map(g => g.id));
+// Toon felicitatie voor doelen die sinds 'before' de grens zijn gepasseerd
+function celebrateNew(before) {
+  const fresh = goals.filter(g => g.kind !== "budget" && !before.has(g.id) && goalSaved(g) >= g.target);
+  if (!fresh.length) return;
+  $("#party-text").innerHTML = fresh.map(g =>
+    `Je hebt je ${g.kind === "beleggen" ? "belegdoel" : "spaardoel"} <b>${esc(g.name)}</b> bereikt: ${eur(goalSaved(g))} van ${eur(g.target)}!`).join("<br><br>");
+  $("#party").classList.remove("hidden");
+}
+$("#party-ok").onclick = () => $("#party").classList.add("hidden");
 const KINDS = { sparen: "🐷 Spaardoel", beleggen: "📈 Belegdoel", budget: "🚦 Budgetlimiet" };
 function fillGoalForm() {
   const kinds = mode === "zakelijk" ? ["budget"] : ["sparen", "beleggen", "budget"];
@@ -519,6 +545,16 @@ function budgetWarning(t, cat, date) {
   if (spent >= b.target * 0.8) return `Let op: nog ${eur(b.target - spent)} over voor ${CAT_LABEL[cat]}`;
   return "";
 }
+// Waarschuwingsbalken bovenaan Toevoegen: budgetten vanaf 80% (deze maand, huidige modus)
+function renderAlerts() {
+  const ym = today().slice(0, 7);
+  const items = goals.filter(g => bookOf(g) === mode && g.kind === "budget")
+    .map(g => ({ g, spent: spentInMonth(g.cat, ym) })).filter(x => x.spent >= x.g.target * 0.8)
+    .sort((a, b) => b.spent / b.g.target - a.spent / a.g.target);
+  $("#alerts").innerHTML = items.map(({ g, spent }) => spent > g.target
+    ? `<div class="alert red">🔴 <b>${esc(CAT_LABEL[g.cat])}</b>: ${eur(spent - g.target)} over je budget van ${eur(g.target)}</div>`
+    : `<div class="alert orange">🟠 <b>${esc(CAT_LABEL[g.cat])}</b>: nog ${eur(g.target - spent)} over van ${eur(g.target)}</div>`).join("");
+}
 function monthsUntil(dateStr) {
   const [y, m] = today().split("-").map(Number), [dy, dm] = dateStr.split("-").map(Number);
   return (dy - y) * 12 + (dm - m);
@@ -532,11 +568,11 @@ function goalCard(g) {
     main = `${eur(spent)} <span style="color:var(--muted);font-weight:400">van ${eur(g.target)}</span>`;
     meta = pct > 1 ? `<span class="out">${eur(spent - g.target)} over je budget</span>` : `Nog ${eur(g.target - spent)} over deze maand`;
   } else {
-    const saved = (g.start || 0) + txs.filter(t => t.goal === g.id).reduce((s, t) => s + t.amount, 0);
+    const saved = goalSaved(g);
     const left = g.target - saved;
     pct = saved / g.target; color = "var(--save)";
     main = `${eur(saved)} <span style="color:var(--muted);font-weight:400">van ${eur(g.target)}</span>`;
-    if (left <= 0) meta = "🎉 Doel bereikt!";
+    if (left <= 0) { meta = "🎉 Doel bereikt!" + (left < 0 ? ` · ${eur(-left)} boven je doel` : ""); color = "var(--in)"; }
     else {
       meta = `Nog ${eur(left)} te gaan · ${Math.floor(pct * 100)}%`;
       if (g.deadline) {
@@ -604,6 +640,7 @@ function render() {
   if (view === "list") renderList();
   if (view === "fixed") renderRules();
   if (view === "goals") renderGoals();
+  if (view === "add") renderAlerts();
 }
 // ---------- Privé / Zakelijk ----------
 function setMode(m) {
