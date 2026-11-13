@@ -331,7 +331,7 @@ $("#f-save").onclick = () => {
              type, cat: $("#f-cat").value, amount, date, note: $("#f-note").value.trim(), goal: pickedGoal("f") });
   save();
   $("#f-amount").value = ""; $("#f-note").value = "";
-  renderAlerts(); celebrateNew(before);
+  renderAlerts(); celebrateNew(before); celebrateMonthly();
   toast(budgetWarning(type, $("#f-cat").value, date) ||
         `${type === "inkomst" ? "Inkomst" : "Uitgave"} van ${eur(amount)} opgeslagen`);
 };
@@ -427,7 +427,7 @@ function runRules() {
       r.next = addMonths(r.next, 1); n++;
     }
   }
-  if (n) celebrateNew(before);
+  if (n) { celebrateNew(before); celebrateMonthly(); }
   if (n) { save(); toast(`${n} vaste ${n === 1 ? "post" : "posten"} automatisch geboekt`); }
 }
 
@@ -487,6 +487,17 @@ function renderRules() {
 }
 
 // ---------- Doelen ----------
+const sumCat = (cat, ym) => txs.filter(t => bookOf(t) === "prive" && t.type === "uitgave" && t.cat === cat && (!ym || t.date.startsWith(ym)))
+  .reduce((s, t) => s + t.amount, 0);
+// Felicitatie zodra het maandelijkse belegbedrag deze maand gehaald is (één keer per maand)
+function celebrateMonthly() {
+  const ym = today().slice(0, 7);
+  const g = goals.find(x => x.kind === "maandbeleg" && x.celebrated !== ym && sumCat("beleggen", ym) >= x.target);
+  if (!g) return;
+  g.celebrated = ym; save();
+  $("#party-text").innerHTML = `Je hebt deze maand ${eur(sumCat("beleggen", ym))} belegd en je maanddoel van ${eur(g.target)} gehaald!`;
+  $("#party").classList.remove("hidden");
+}
 const goalSaved = g => (g.start || 0) + txs.filter(t => t.goal === g.id).reduce((s, t) => s + t.amount, 0);
 const reachedSet = () => new Set(goals.filter(g => g.kind !== "budget" && goalSaved(g) >= g.target).map(g => g.id));
 // Toon felicitatie voor doelen die sinds 'before' de grens zijn gepasseerd
@@ -498,19 +509,19 @@ function celebrateNew(before) {
   $("#party").classList.remove("hidden");
 }
 $("#party-ok").onclick = () => $("#party").classList.add("hidden");
-const KINDS = { sparen: "🐷 Spaardoel", beleggen: "📈 Belegdoel", budget: "🚦 Budgetlimiet" };
+const KINDS = { sparen: "🐷 Spaardoel", beleggen: "📈 Belegdoel", maandbeleg: "📅 Maandelijks beleggen", budget: "🚦 Budgetlimiet" };
 function fillGoalForm() {
-  const kinds = mode === "zakelijk" ? ["budget"] : ["sparen", "beleggen", "budget"];
+  const kinds = mode === "zakelijk" ? ["budget"] : ["sparen", "beleggen", "maandbeleg", "budget"];
   const cur = $("#g-kind").value;
   $("#g-kind").innerHTML = kinds.map(k => `<option value="${k}">${KINDS[k]}</option>`).join("");
   if (kinds.includes(cur)) $("#g-kind").value = cur;
   $("#g-cat").innerHTML = CATS[mode].uitgave.filter(g => !g.vermogen).map(g =>
     `<optgroup label="${esc(g.group)}">${g.items.map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join("")}</optgroup>`).join("");
-  const budget = $("#g-kind").value === "budget";
-  $("#g-namewrap").classList.toggle("hidden", budget);
+  const k = $("#g-kind").value, budget = k === "budget", monthly = k === "maandbeleg";
+  $("#g-namewrap").classList.toggle("hidden", budget || monthly);
   $("#g-catwrap").classList.toggle("hidden", !budget);
-  $("#g-extra").classList.toggle("hidden", budget);
-  $("#g-targetlabel").textContent = budget ? "Maximaal per maand (€)" : "Doelbedrag (€)";
+  $("#g-extra").classList.toggle("hidden", budget || monthly);
+  $("#g-targetlabel").textContent = budget ? "Maximaal per maand (€)" : monthly ? "Elke maand beleggen (€)" : "Doelbedrag (€)";
   $("#g-name").placeholder = $("#g-kind").value === "beleggen" ? "Bijv. ETF-portefeuille" : "Bijv. Buffer";
 }
 $("#g-kind").onchange = fillGoalForm;
@@ -523,6 +534,9 @@ $("#g-save").onclick = () => {
     g.cat = $("#g-cat").value;
     if (goals.some(x => bookOf(x) === mode && x.kind === "budget" && x.cat === g.cat)) { toast("Voor deze categorie is al een budget"); return; }
     g.name = CAT_LABEL[g.cat];
+  } else if (kind === "maandbeleg") {
+    if (goals.some(x => bookOf(x) === mode && x.kind === "maandbeleg")) { toast("Je hebt al een maandelijks belegdoel"); return; }
+    g.name = "Aandelen & ETF's";
   } else {
     g.name = $("#g-name").value.trim() || KINDS[kind].slice(3);
     g.start = parseAmount($("#g-start").value) || 0;
@@ -561,7 +575,14 @@ function monthsUntil(dateStr) {
 }
 function goalCard(g) {
   let pct, color, main, meta;
-  if (g.kind === "budget") {
+  if (g.kind === "maandbeleg") {
+    const ym = today().slice(0, 7), done = sumCat("beleggen", ym);
+    pct = done / g.target; color = pct >= 1 ? "var(--in)" : "var(--save)";
+    const mname = new Date(ym + "-01T12:00").toLocaleDateString("nl-NL", { month: "long" });
+    main = `${eur(done)} <span style="color:var(--muted);font-weight:400">van ${eur(g.target)} in ${mname}</span>`;
+    meta = (pct >= 1 ? "✅ Maanddoel gehaald!" : `Nog ${eur(g.target - done)} te beleggen deze maand`) +
+      `<br>Totaal belegd: <b>${eur(sumCat("beleggen"))}</b>`;
+  } else if (g.kind === "budget") {
     const ym = today().slice(0, 7), spent = spentInMonth(g.cat, ym);
     pct = spent / g.target;
     color = pct > 1 ? "var(--out)" : pct >= 0.8 ? "#d97706" : "var(--in)";
@@ -592,7 +613,7 @@ function goalCard(g) {
 function renderGoals() {
   fillGoalForm();
   const mine = goals.filter(g => bookOf(g) === mode);
-  const order = { sparen: 0, beleggen: 1, budget: 2 };
+  const order = { sparen: 0, beleggen: 1, maandbeleg: 2, budget: 3 };
   $("#g-list").innerHTML = mine.length ? [...mine].sort((a, b) => order[a.kind] - order[b.kind]).map(goalCard).join("")
     : `<div class="card"><div class="empty">Nog geen doelen. Maak hieronder je eerste doel aan.</div></div>`;
   $$("#g-list .del").forEach(b => b.onclick = () => {
