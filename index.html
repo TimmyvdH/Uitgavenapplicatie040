@@ -129,6 +129,22 @@
 
   <!-- OVERZICHT -->
   <section id="view-overview" class="hidden">
+    <div class="card" id="s-card">
+      <div class="top" style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Saldo betaalrekening</h2>
+        <button class="edit" id="s-edit" style="border:0;background:none;font-size:17px">✏️</button>
+      </div>
+      <div id="s-view"></div>
+      <div id="s-form" class="hidden">
+        <label for="s-amount">Saldo volgens je bank (€)</label>
+        <input id="s-amount" class="amount" inputmode="decimal" placeholder="0,00" autocomplete="off">
+        <label for="s-date">Op datum</label>
+        <input id="s-date" type="date">
+        <p class="hint" style="margin:8px 0 0">Boekingen op of vóór deze datum zitten al in dit saldo. Alles daarna rekent de app erbij of eraf.</p>
+        <button class="btn" id="s-save">Saldo opslaan</button>
+        <button class="btn secondary" id="s-cancel">Annuleren</button>
+      </div>
+    </div>
     <div class="monthnav">
       <button data-step="-1">‹</button><strong class="m-label"></strong><button data-step="1">›</button>
     </div>
@@ -197,13 +213,13 @@
       <select id="g-kind"></select>
       <div id="g-namewrap"><label for="g-name">Naam</label>
         <input id="g-name" placeholder="Bijv. Buffer" autocomplete="off"></div>
-      <div id="g-catwrap" class="hidden"><label for="g-cat">Categorie</label><select id="g-cat"></select></div>
+      <div id="g-catwrap" class="hidden"><label for="g-cat" id="g-catlabel">Categorie</label><select id="g-cat"></select></div>
       <label for="g-target" id="g-targetlabel">Doelbedrag (€)</label>
       <input id="g-target" class="amount" inputmode="decimal" placeholder="0,00" autocomplete="off">
       <div id="g-extra">
-        <label for="g-start">Heb je hier al geld voor? (optioneel)</label>
-        <input id="g-start" inputmode="decimal" placeholder="0,00" autocomplete="off">
-        <label for="g-deadline">Streefdatum (optioneel)</label>
+        <div id="g-startwrap"><label for="g-start">Heb je hier al geld voor? (optioneel)</label>
+        <input id="g-start" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
+        <label for="g-deadline" id="g-deadlinelabel">Streefdatum (optioneel)</label>
         <input id="g-deadline" type="date">
       </div>
       <button class="btn" id="g-save">Doel toevoegen</button>
@@ -263,7 +279,7 @@ const CATS = { prive: {
     { group: "🛡️ Verzekeringen", items: [
       ["verz_scooter", "🛵 Verzekering scooter"], ["verzekeringen", "🛡️ Overige verzekeringen"] ] },
     { group: "💳 Financieel", items: [
-      ["bankkosten", "🏦 Kosten bankrekening"], ["duo", "🎓 Lening DUO"] ] },
+      ["bankkosten", "🏦 Kosten bankrekening"], ["duo", "🎓 Lening DUO"], ["aflossing", "💸 Aflossing schuld"] ] },
     { group: "🧾 Overige uitgaven", items: [
       ["boodschappen", "🛒 Boodschappen"], ["uiteten", "🍽️ Uit eten & drinken"], ["vervoer", "🚗 Vervoer"],
       ["uitgaan", "🎉 Uitgaan & vrije tijd"], ["kleding", "👕 Kleding & verzorging"], ["reizen", "✈️ Reizen"],
@@ -296,11 +312,13 @@ function load() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } ca
 const RKEY = "kasboek_rules_v1";
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(txs)); localStorage.setItem(RKEY, JSON.stringify(rules));
-        localStorage.setItem(GKEY, JSON.stringify(goals)); }
+        localStorage.setItem(GKEY, JSON.stringify(goals)); localStorage.setItem(SKEY, JSON.stringify(saldo)); }
   catch { toast("Opslaan mislukt"); }
 }
 let txs = load();
 let rules = (() => { try { return JSON.parse(localStorage.getItem(RKEY)) || []; } catch { return []; } })();
+const SKEY = "kasboek_saldo_v1";
+let saldo = (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch { return {}; } })();
 const GKEY = "kasboek_goals_v1";
 let goals = (() => { try { return JSON.parse(localStorage.getItem(GKEY)) || []; } catch { return []; } })();
 // Eenmalige correctie: privé-posten met de zakelijke telefooncategorie → privé telefoon
@@ -335,7 +353,7 @@ function fillCats() { $("#f-cat").innerHTML = catOptions(type); fillGoalPick("f"
 // "Voor doel"-keuze: alleen tonen bij Sparen/Beleggen als er een passend doel is
 function fillGoalPick(p) {
   const cat = $(`#${p}-cat`).value;
-  const list = goals.filter(g => bookOf(g) === mode && g.kind === cat);
+  const list = goals.filter(g => bookOf(g) === mode && (g.kind === cat || (g.kind === "schuld" && g.cat === cat)));
   $(`#${p}-goalwrap`).classList.toggle("hidden", !list.length);
   $(`#${p}-goal`).innerHTML = list.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join("") +
     `<option value="">Geen specifiek doel</option>`;
@@ -435,7 +453,7 @@ function renderOverview() {
   $("#o-svcats").innerHTML = catBlock(sv, "var(--save)");
   $("#o-incats").innerHTML = catBlock(inc, "var(--in)");
   $("#o-svcard").classList.toggle("hidden", mode === "zakelijk");
-  renderChart();
+  renderChart(); renderSaldo();
 
   // Compleet overzicht: beide administraties naast elkaar
   const all = txs.filter(t => t.date.startsWith(month));
@@ -446,6 +464,34 @@ function renderOverview() {
   $("#o-all").innerHTML = line("👤 Privé saldo", p) + line("💼 Zakelijk saldo", z) +
     `<div style="border-top:2px solid var(--text);margin-top:10px"></div>` + line("Totaal deze maand", p + z, true);
 }
+
+// Saldo betaalrekening: startsaldo + alles wat ná de startdatum t/m vandaag is geboekt
+function currentSaldo() {
+  const s = saldo[mode]; if (!s) return null;
+  const now = today();
+  return s.amount + txs.filter(t => bookOf(t) === mode && t.date > s.date && t.date <= now)
+    .reduce((sum, t) => sum + (t.type === "inkomst" ? t.amount : -t.amount), 0);
+}
+function renderSaldo() {
+  const s = saldo[mode], cur = currentSaldo();
+  $("#s-view").innerHTML = s
+    ? `<div style="font-size:28px;font-weight:700;margin-top:6px" class="${cur < 0 ? "out" : ""}">${cur < 0 ? "− " : ""}${eur(Math.abs(cur))}</div>
+       <p class="hint" style="margin:4px 0 0">Vandaag, berekend vanaf ${eur(s.amount)} op ${new Date(s.date + "T12:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long" })}.
+       Wijkt het af van je bank? Dan ben je waarschijnlijk iets vergeten in te voeren.</p>`
+    : `<p class="hint" style="margin:6px 0 0">Tik op ✏️ en vul het saldo van je ${mode === "zakelijk" ? "zakelijke" : "privé"}rekening in. Daarna houdt de app het voor je bij.</p>`;
+}
+function toggleSaldoForm(open) {
+  $("#s-form").classList.toggle("hidden", !open); $("#s-view").classList.toggle("hidden", open);
+  if (open) { const s = saldo[mode]; $("#s-amount").value = s ? centsToInput(currentSaldo()) : ""; $("#s-date").value = today(); }
+}
+$("#s-edit").onclick = () => toggleSaldoForm($("#s-form").classList.contains("hidden"));
+$("#s-cancel").onclick = () => toggleSaldoForm(false);
+$("#s-save").onclick = () => {
+  const raw = $("#s-amount").value.trim(), neg = /^[-−]/.test(raw), amt = parseAmount(raw.replace(/^[-−]/, ""));
+  if (amt === null && !/^[-−]?0+([,.]0+)?$/.test(raw)) { toast("Vul een geldig bedrag in"); $("#s-amount").focus(); return; }
+  saldo[mode] = { amount: (neg ? -1 : 1) * (amt || 0), date: $("#s-date").value || today() };
+  save(); toggleSaldoForm(false); renderSaldo(); toast("Saldo opgeslagen");
+};
 
 // Laatste 6 maanden (t/m de gekozen maand) voor alle uitgaven of één categorie
 let chartCat = "", chartSel = 5;
@@ -614,24 +660,33 @@ function celebrateNew(before) {
   const fresh = goals.filter(g => g.kind !== "budget" && !before.has(g.id) && goalSaved(g) >= g.target);
   if (!fresh.length) return;
   $("#party-text").innerHTML = fresh.map(g =>
-    `Je hebt je ${g.kind === "beleggen" ? "belegdoel" : "spaardoel"} <b>${esc(g.name)}</b> bereikt: ${eur(goalSaved(g))} van ${eur(g.target)}!`).join("<br><br>");
+    g.kind === "schuld" ? `Je schuld <b>${esc(g.name)}</b> is volledig afgelost. Je bent schuldenvrij! 🙌`
+    : `Je hebt je ${g.kind === "beleggen" ? "belegdoel" : "spaardoel"} <b>${esc(g.name)}</b> bereikt: ${eur(goalSaved(g))} van ${eur(g.target)}!`).join("<br><br>");
   $("#party").classList.remove("hidden");
 }
 $("#party-ok").onclick = () => $("#party").classList.add("hidden");
-const KINDS = { sparen: "🐷 Spaardoel", beleggen: "📈 Belegdoel", maandbeleg: "📅 Maandelijks beleggen", budget: "🚦 Budgetlimiet" };
+const KINDS = { sparen: "🐷 Spaardoel", beleggen: "📈 Belegdoel", maandbeleg: "📅 Maandelijks beleggen", schuld: "💸 Schuld aflossen", budget: "🚦 Budgetlimiet" };
+const DEBT_CATS = ["duo", "aflossing"];
 function fillGoalForm() {
-  const kinds = mode === "zakelijk" ? ["budget"] : ["sparen", "beleggen", "maandbeleg", "budget"];
+  const kinds = mode === "zakelijk" ? ["budget"] : ["sparen", "beleggen", "maandbeleg", "schuld", "budget"];
   const cur = $("#g-kind").value;
   $("#g-kind").innerHTML = kinds.map(k => `<option value="${k}">${KINDS[k]}</option>`).join("");
   if (kinds.includes(cur)) $("#g-kind").value = cur;
-  $("#g-cat").innerHTML = CATS[mode].uitgave.filter(g => !g.vermogen).map(g =>
-    `<optgroup label="${esc(g.group)}">${g.items.map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join("")}</optgroup>`).join("");
-  const k = $("#g-kind").value, budget = k === "budget", monthly = k === "maandbeleg";
+  const k = $("#g-kind").value, budget = k === "budget", monthly = k === "maandbeleg", debt = k === "schuld";
+  const curCat = $("#g-cat").value;
+  $("#g-cat").innerHTML = debt
+    ? DEBT_CATS.map(id => `<option value="${id}">${esc(CAT_LABEL[id])}</option>`).join("")
+    : CATS[mode].uitgave.filter(g => !g.vermogen).map(g =>
+      `<optgroup label="${esc(g.group)}">${g.items.map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join("")}</optgroup>`).join("");
+  if ([...$("#g-cat").options].some(o => o.value === curCat)) $("#g-cat").value = curCat;
   $("#g-namewrap").classList.toggle("hidden", budget || monthly);
-  $("#g-catwrap").classList.toggle("hidden", !budget);
+  $("#g-catwrap").classList.toggle("hidden", !budget && !debt);
+  $("#g-catlabel").textContent = debt ? "Aflossingen boek je op categorie" : "Categorie";
   $("#g-extra").classList.toggle("hidden", budget || monthly);
-  $("#g-targetlabel").textContent = budget ? "Maximaal per maand (€)" : monthly ? "Elke maand beleggen (€)" : "Doelbedrag (€)";
-  $("#g-name").placeholder = $("#g-kind").value === "beleggen" ? "Bijv. ETF-portefeuille" : "Bijv. Buffer";
+  $("#g-startwrap").classList.toggle("hidden", debt);
+  $("#g-targetlabel").textContent = budget ? "Maximaal per maand (€)" : monthly ? "Elke maand beleggen (€)" : debt ? "Hoe hoog is de schuld nu? (€)" : "Doelbedrag (€)";
+  $("#g-name").placeholder = k === "beleggen" ? "Bijv. ETF-portefeuille" : debt ? "Bijv. DUO-lening" : "Bijv. Buffer";
+  $("#g-deadlinelabel").textContent = debt ? "Wanneer wil je schuldenvrij zijn? (optioneel)" : "Streefdatum (optioneel)";
 }
 $("#g-kind").onchange = fillGoalForm;
 let editGoal = null;
@@ -644,7 +699,8 @@ function startEditGoal(id) {
   const g = goals.find(x => x.id === id); if (!g) return;
   $("#g-kind").value = g.kind; fillGoalForm(); $("#g-kind").disabled = true;
   $("#g-target").value = centsToInput(g.target);
-  if (g.kind === "budget") $("#g-cat").value = g.cat;
+  if (g.kind === "budget" || g.kind === "schuld") $("#g-cat").value = g.cat;
+  if (g.kind === "schuld") { $("#g-name").value = g.name; $("#g-deadline").value = g.deadline || ""; }
   if (g.kind === "sparen" || g.kind === "beleggen") {
     $("#g-name").value = g.name; $("#g-start").value = g.start ? centsToInput(g.start) : ""; $("#g-deadline").value = g.deadline || "";
   }
@@ -664,6 +720,8 @@ $("#g-save").onclick = () => {
       const cat = $("#g-cat").value;
       if (goals.some(x => x.id !== g.id && bookOf(x) === mode && x.kind === "budget" && x.cat === cat)) { toast("Voor deze categorie is al een budget"); return; }
       Object.assign(g, { cat, name: CAT_LABEL[cat] });
+    } else if (kind === "schuld") {
+      Object.assign(g, { cat: $("#g-cat").value, name: $("#g-name").value.trim() || g.name, deadline: $("#g-deadline").value || "" });
     } else if (kind !== "maandbeleg") {
       Object.assign(g, { name: $("#g-name").value.trim() || g.name, start: parseAmount($("#g-start").value) || 0, deadline: $("#g-deadline").value || "" });
     }
@@ -676,6 +734,10 @@ $("#g-save").onclick = () => {
     g.cat = $("#g-cat").value;
     if (goals.some(x => bookOf(x) === mode && x.kind === "budget" && x.cat === g.cat)) { toast("Voor deze categorie is al een budget"); return; }
     g.name = CAT_LABEL[g.cat];
+  } else if (kind === "schuld") {
+    g.cat = $("#g-cat").value;
+    g.name = $("#g-name").value.trim() || "Schuld";
+    g.start = 0; g.deadline = $("#g-deadline").value || "";
   } else if (kind === "maandbeleg") {
     if (goals.some(x => bookOf(x) === mode && x.kind === "maandbeleg")) { toast("Je hebt al een maandelijks belegdoel"); return; }
     g.name = "Aandelen & ETF's";
@@ -762,6 +824,21 @@ function goalCard(g) {
     main = `${eur(done)} <span style="color:var(--muted);font-weight:400">van ${eur(g.target)} in ${mname}</span>`;
     meta = (pct >= 1 ? "✅ Maanddoel gehaald!" : `Nog ${eur(g.target - done)} te beleggen deze maand`) +
       `<br>Totaal belegd: <b>${eur(sumCat("beleggen"))}</b>`;
+  } else if (g.kind === "schuld") {
+    const paid = goalSaved(g), left = g.target - paid;
+    pct = paid / g.target; color = left <= 0 ? "var(--in)" : "var(--save)";
+    main = left <= 0 ? "€ 0,00 <span style=\"color:var(--muted);font-weight:400\">restschuld</span>"
+      : `${eur(left)} <span style="color:var(--muted);font-weight:400">restschuld</span>`;
+    if (left <= 0) meta = "🎉 Volledig afgelost!";
+    else {
+      meta = `${eur(paid)} van ${eur(g.target)} afgelost · ${Math.floor(pct * 100)}%`;
+      if (g.deadline) {
+        const d = new Date(g.deadline + "T12:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" });
+        meta += g.deadline < today() ? `<br><span class="out">Streefdatum ${d} is verstreken</span>`
+          : `<br>Schuldenvrij op ${d} → <b>${eur(Math.ceil(left / Math.max(1, monthsUntil(g.deadline))))} per maand</b> aflossen`;
+      }
+      meta += `<br><span style="font-size:12px">Boek aflossingen op ${esc(CAT_LABEL[g.cat])} en kies dit doel bij "Voor doel".</span>`;
+    }
   } else if (g.kind === "budget") {
     const ym = today().slice(0, 7), spent = spentInMonth(g.cat, ym);
     const lim = effTarget(g, ym), cut = g.target - lim;
@@ -798,7 +875,7 @@ function goalCard(g) {
 function renderGoals() {
   if (!editGoal) fillGoalForm();
   const mine = goals.filter(g => bookOf(g) === mode);
-  const order = { sparen: 0, beleggen: 1, maandbeleg: 2, budget: 3 };
+  const order = { sparen: 0, beleggen: 1, maandbeleg: 2, schuld: 3, budget: 4 };
   $("#g-list").innerHTML = mine.length ? [...mine].sort((a, b) => order[a.kind] - order[b.kind]).map(goalCard).join("")
     : `<div class="card"><div class="empty">Nog geen doelen. Maak hieronder je eerste doel aan.</div></div>`;
   $$("#g-list .edit").forEach(b => b.onclick = () => startEditGoal(b.dataset.id));
@@ -810,7 +887,7 @@ function renderGoals() {
 
 // ---------- Back-up ----------
 $("#b-export").onclick = () => {
-  const blob = new Blob([JSON.stringify({ app: "kasboek", version: 3, transactions: txs, rules, goals }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ app: "kasboek", version: 4, transactions: txs, rules, goals, saldo }, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = `kasboek-backup-${today()}.json`; a.click();
   try { localStorage.setItem("kasboek_lastbackup", today()); } catch {}
@@ -827,6 +904,7 @@ $("#b-file").onchange = async e => {
     if (!confirm(`${list.length} transacties terugzetten? Dit vervangt wat er nu in de app staat.`)) return;
     txs = list; if (Array.isArray(data.rules)) rules = data.rules;
     if (Array.isArray(data.goals)) goals = data.goals;
+    if (data.saldo && typeof data.saldo === "object") saldo = data.saldo;
     save(); render(); toast("Back-up teruggezet");
   } catch { toast("Ongeldig back-upbestand"); }
   e.target.value = "";
