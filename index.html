@@ -9,6 +9,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Kasboek">
 <title>Kasboek</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="apple-touch-icon.png">
 <style>
   :root {
     --bg: #f5f5f4; --card: #ffffff; --text: #1c1917; --muted: #78716c; --line: #e7e5e4;
@@ -170,7 +172,9 @@
 
   <!-- LIJST -->
   <section id="view-list" class="hidden">
-    <div class="monthnav">
+    <input id="l-search" type="search" placeholder="🔍 Zoek op winkel, categorie of bedrag" autocomplete="off" style="margin-bottom:12px">
+    <div class="card hidden" id="l-sum"></div>
+    <div class="monthnav" id="l-monthnav">
       <button data-step="-1">‹</button><strong class="m-label"></strong><button data-step="1">›</button>
     </div>
     <div class="card" id="l-list"></div>
@@ -267,7 +271,7 @@
 
 <script>
 // Verhoog dit getal bij elke nieuwe versie; de app vergelijkt het met de versie op GitHub
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 // ---------- Categorieën ----------
 const CATS = { prive: {
   inkomst: [
@@ -524,14 +528,33 @@ function renderChart() {
     <p class="hint" style="margin:10px 0 0">${avg ? `Gemiddeld <b>${eur(Math.round(avg))}</b> per maand (stippellijn). Tik op een staaf voor het bedrag.` : "Nog geen uitgaven in deze periode."}</p>`;
   $$("#c-chart .col").forEach(c => c.onclick = () => { chartSel = +c.dataset.i; renderChart(); });
 }
+$("#l-search").oninput = renderList;
 $("#c-cat").onchange = e => { chartCat = e.target.value; renderChart(); };
 
 // ---------- Lijst ----------
+// Zoeken: door alle maanden heen, op notitie, categorie of bedrag (huidige modus)
+function searchTx(q) {
+  q = q.toLowerCase();
+  return txs.filter(t => bookOf(t) === mode && (
+    (t.note || "").toLowerCase().includes(q) ||
+    (CAT_LABEL[t.cat] || "").toLowerCase().includes(q) ||
+    centsToInput(t.amount).includes(q.replace(".", ","))));
+}
 function renderList() {
-  const list = monthTx().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-  if (!list.length) { $("#l-list").innerHTML = `<div class="empty">Geen transacties deze maand</div>`; return; }
-  $("#l-list").innerHTML = list.map(t => {
-    const d = new Date(t.date + "T12:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+  const q = $("#l-search").value.trim();
+  $("#l-monthnav").classList.toggle("hidden", !!q);
+  $("#l-sum").classList.toggle("hidden", !q);
+  const list = (q ? searchTx(q) : monthTx()).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  if (q) {
+    const out = list.filter(t => t.type === "uitgave").reduce((s, t) => s + t.amount, 0);
+    const inc = list.filter(t => t.type === "inkomst").reduce((s, t) => s + t.amount, 0);
+    $("#l-sum").innerHTML = `<b>${list.length} ${list.length === 1 ? "resultaat" : "resultaten"}</b> voor “${esc(q)}”
+      ${out ? `<div class="row"><span>Totaal uitgegeven</span><b class="out">− ${eur(out)}</b></div>` : ""}
+      ${inc ? `<div class="row"><span>Totaal ontvangen</span><b class="in">+ ${eur(inc)}</b></div>` : ""}`;
+  }
+  if (!list.length) { $("#l-list").innerHTML = `<div class="empty">${q ? "Niets gevonden" : "Geen transacties deze maand"}</div>`; return; }
+  $("#l-list").innerHTML = list.slice(0, 300).map(t => {
+    const d = new Date(t.date + "T12:00").toLocaleDateString("nl-NL", q ? { day: "numeric", month: "short", year: "numeric" } : { day: "numeric", month: "short" });
     const cls = t.type === "inkomst" ? "in" : VERMOGEN.has(t.cat) ? "sv" : "out";
     const sign = t.type === "inkomst" ? "+" : "−";
     return `<div class="tx"><div>${esc(CAT_LABEL[t.cat] || t.cat)}<small>${t.rule ? "🔁 " : ""}${d}${t.note ? " · " + esc(t.note) : ""}</small></div>
