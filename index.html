@@ -159,6 +159,7 @@
         <div class="tot"><span>Over</span><b id="o-rest"></b></div>
       </div>
     </div>
+    <button class="btn secondary" id="o-report" style="margin:0 0 12px">📅 Maandrapport bekijken</button>
     <div class="card"><h2>Uitgaven per categorie</h2><div id="o-outcats"></div></div>
     <div class="card">
       <h2>Laatste 6 maanden</h2>
@@ -251,6 +252,12 @@
 </main>
 
 <div class="toast" id="toast"></div>
+<div id="report" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:49;padding:16px">
+  <div class="card" style="max-width:420px;width:100%;margin:0;max-height:86vh;overflow-y:auto">
+    <div id="report-body"></div>
+    <button class="btn" id="report-ok">Sluiten</button>
+  </div>
+</div>
 <div id="party" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px">
   <div class="card" style="text-align:center;max-width:340px;width:100%;margin:0">
     <div style="font-size:64px;line-height:1">🎉</div>
@@ -271,7 +278,7 @@
 
 <script>
 // Verhoog dit getal bij elke nieuwe versie; de app vergelijkt het met de versie op GitHub
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 // ---------- Categorieën ----------
 const CATS = { prive: {
   inkomst: [
@@ -960,6 +967,77 @@ $("#b-file").onchange = async e => {
   e.target.value = "";
 };
 
+// ---------- Maandrapport ----------
+function monthName(ym, withYear = true) {
+  return new Date(ym + "-01T12:00").toLocaleDateString("nl-NL", withYear ? { month: "long", year: "numeric" } : { month: "long" });
+}
+function showReport(ym) {
+  const inBook = t => bookOf(t) === mode && t.date.startsWith(ym);
+  const sum = a => a.reduce((s, t) => s + t.amount, 0);
+  const list = txs.filter(inBook);
+  const inc = sum(list.filter(t => t.type === "inkomst"));
+  const outL = list.filter(t => t.type === "uitgave" && !VERMOGEN.has(t.cat));
+  const out = sum(outL), sv = sum(list.filter(t => t.type === "uitgave" && VERMOGEN.has(t.cat)));
+  const rest = inc - out - sv;
+  const prev = addMonths(ym, -1);
+  const prevOut = sum(txs.filter(t => bookOf(t) === mode && t.date.startsWith(prev) && t.type === "uitgave" && !VERMOGEN.has(t.cat)));
+  const row = (l, v, cls = "") => `<div class="row"><span>${l}</span><b class="${cls}">${v}</b></div>`;
+  let h = `<div style="font-size:40px;text-align:center">📊</div>
+    <h2 style="text-align:center;font-size:20px;margin:6px 0 2px">Je maand: ${monthName(ym)}</h2>
+    <p class="hint" style="text-align:center;margin:0 0 14px">${mode === "zakelijk" ? "💼 Zakelijk" : "👤 Privé"}</p>`;
+  if (!list.length) { $("#report-body").innerHTML = h + `<div class="empty">Geen transacties in deze maand.</div>`; $("#report").classList.remove("hidden"); return; }
+  // Totalen
+  h += `<h3>💶 In één oogopslag</h3>` + row("Inkomsten", "+ " + eur(inc), "in") + row("Uitgaven", "− " + eur(out), "out") +
+    (sv ? row("Gespaard / belegd", eur(sv), "sv") : "") + row("<b>Over</b>", (rest < 0 ? "− " : "+ ") + eur(Math.abs(rest)), rest < 0 ? "out" : "in");
+  if (prevOut) {
+    const diff = out - prevOut, pct = Math.round(Math.abs(diff) / prevOut * 100);
+    h += `<p class="hint" style="margin:6px 0 0">${diff > 0 ? "📈" : "📉"} Je gaf ${eur(Math.abs(diff))} (${pct}%) ${diff > 0 ? "méér" : "minder"} uit dan in ${monthName(prev, false)}.</p>`;
+  }
+  // Top 3 categorieën
+  const byCat = {}; for (const t of outL) byCat[t.cat] = (byCat[t.cat] || 0) + t.amount;
+  const top = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  if (top.length) h += `<h3>🏆 Grootste uitgaven</h3>` + top.map(([c, v], i) => row(`${i + 1}. ${esc(CAT_LABEL[c] || c)}`, eur(v))).join("");
+  // Budgetten
+  const buds = goals.filter(g => bookOf(g) === mode && g.kind === "budget" && (!g.created || g.created.slice(0, 7) <= ym));
+  if (buds.length) {
+    const res = buds.map(g => ({ g, spent: spentInMonth(g.cat, ym), lim: effTarget(g, ym) }));
+    const ok = res.filter(r => r.spent <= r.lim).length;
+    h += `<h3>🚦 Budgetten: ${ok} van ${res.length} gehaald</h3>` + res.map(r => r.spent <= r.lim
+      ? row(`✅ ${esc(CAT_LABEL[r.g.cat])}`, `${eur(r.spent)} / ${eur(r.lim)}`)
+      : row(`❌ ${esc(CAT_LABEL[r.g.cat])}`, `${eur(r.spent - r.lim)} te veel`, "out")).join("");
+    if (ok < res.length) h += `<p class="hint" style="margin:6px 0 0">Wat je te veel uitgaf, gaat af van je budget in ${monthName(addMonths(ym, 1), false)}.</p>`;
+  }
+  // Doelen
+  const gl = goals.filter(g => bookOf(g) === mode && ["sparen", "beleggen", "schuld"].includes(g.kind));
+  const lines = gl.map(g => {
+    const m = txs.filter(t => t.goal === g.id && t.date.startsWith(ym)).reduce((s, t) => s + t.amount, 0);
+    const tot = goalSaved(g);
+    return g.kind === "schuld"
+      ? row(`💸 ${esc(g.name)}`, m ? `${eur(m)} afgelost` : "niets afgelost")
+      : row(`${g.kind === "sparen" ? "🐷" : "📈"} ${esc(g.name)}`, `${m ? "+ " + eur(m) : "€ 0"} · ${Math.min(100, Math.floor(tot / g.target * 100))}%`, m ? "sv" : "");
+  });
+  const mb = goals.find(g => bookOf(g) === mode && g.kind === "maandbeleg");
+  if (mb) { const d = sumCat("beleggen", ym); lines.push(row(`📅 Maandelijks beleggen`, `${eur(d)} / ${eur(mb.target)} ${d >= mb.target ? "✅" : ""}`)); }
+  if (lines.length) h += `<h3>🎯 Doelen deze maand</h3>` + lines.join("");
+  // Tip
+  if (rest > 0 && mode === "prive") h += `<div class="alert info" style="margin:14px 0 0">💡 Je hield ${eur(rest)} over. Zet het naar je spaarrekening of je potje voor onvoorziene kosten.</div>`;
+  if (rest < 0) h += `<div class="alert orange" style="margin:14px 0 0">💡 Je gaf ${eur(-rest)} meer uit dan er binnenkwam. Kijk bij je budgetten waar je volgende maand kunt besparen.</div>`;
+  $("#report-body").innerHTML = h;
+  $("#report").classList.remove("hidden");
+}
+$("#report-ok").onclick = () => $("#report").classList.add("hidden");
+$("#o-report").onclick = () => showReport(month);
+// Automatisch: eerste keer openen in een nieuwe maand → rapport van vorige maand (eenmalig per modus)
+function autoReport() {
+  const prev = addMonths(today().slice(0, 7), -1), key = "kasboek_report_" + mode;
+  let seen = ""; try { seen = localStorage.getItem(key) || ""; } catch {}
+  if (seen >= prev) return;
+  try { localStorage.setItem(key, prev); } catch {}
+  if (!txs.some(t => bookOf(t) === mode && t.date.startsWith(prev))) return;
+  if (!$("#party").classList.contains("hidden")) return;
+  showReport(prev);
+}
+
 // ---------- Updates ----------
 // Haalt index.html zonder cache op; is daar een hoger versienummer, dan herladen met ?v= zodat iOS de oude kopie overslaat.
 // Je gegevens blijven staan: ze horen bij het webadres, niet bij de versie.
@@ -1020,9 +1098,10 @@ $$("#modes button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
 
 runRules();
 setMode(mode);
+autoReport();
 checkUpdate();
 // Bij heropenen van de app (bijv. de volgende dag) opnieuw controleren
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { runRules(); render(); checkUpdate(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { runRules(); render(); autoReport(); checkUpdate(); } });
 </script>
 </body>
 </html>
