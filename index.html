@@ -69,6 +69,14 @@
   .chart .avg { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); pointer-events: none; }
   .chart-x { display: flex; gap: 8px; margin-top: 6px; }
   .chart-x span { flex: 1; text-align: center; font-size: 12px; color: var(--muted); }
+  #lock-pad button { width: 76px; height: 76px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 28px; }
+  #lock-dots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--text); display: block; }
+  #lock-dots i.on { background: var(--text); }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 25% { transform: translateX(-8px); } 50% { transform: translateX(8px); } 75% { transform: translateX(-4px); } }
+  .cm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .cm-row.off span { color: var(--muted); text-decoration: line-through; }
+  .cm-row button { border: 0; background: none; font-size: 17px; padding: 4px 6px; }
   .alert { border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; font-size: 15px; line-height: 1.4; }
   .alert.red { background: #fee2e2; color: #991b1b; } .alert.orange { background: #ffedd5; color: #9a3412; }
   @media (prefers-color-scheme: dark) { .alert.info { background: #172554; color: #bfdbfe; } .alert.red { background: #450a0a; color: #fecaca; } .alert.orange { background: #431407; color: #fed7aa; } }
@@ -159,7 +167,10 @@
         <div class="tot"><span>Over</span><b id="o-rest"></b></div>
       </div>
     </div>
-    <button class="btn secondary" id="o-report" style="margin:0 0 12px">📅 Maandrapport bekijken</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 12px">
+      <button class="btn secondary" id="o-report" style="margin:0">🧾 Maandrapport</button>
+      <button class="btn secondary" id="o-year" style="margin:0">🗂️ Jaaroverzicht</button>
+    </div>
     <div class="card"><h2>Uitgaven per categorie</h2><div id="o-outcats"></div></div>
     <div class="card">
       <h2>Laatste 6 maanden</h2>
@@ -237,10 +248,10 @@
     </div>
   </section>
 
-  <!-- BACKUP -->
+  <!-- MEER: pincode, categorieën, back-up -->
   <section id="view-backup" class="hidden">
     <div class="card">
-      <h2>Back-up</h2>
+      <h2>💾 Back-up</h2>
       <p class="hint">Je gegevens staan alleen op deze telefoon. Maak af en toe een back-up, zodat je niets kwijtraakt als je van telefoon wisselt of je browsergegevens wist.</p>
       <button class="btn" id="b-export">Back-up downloaden</button>
       <button class="btn secondary" id="b-import">Back-up terugzetten</button>
@@ -248,10 +259,40 @@
       <button class="btn secondary" id="u-check">🔄 Zoek naar updates</button>
       <p class="hint" style="text-align:center;margin:14px 0 0" id="u-label"></p>
     </div>
+    <div class="card">
+      <h2>🔒 Pincode</h2>
+      <p class="hint" id="p-status" style="margin-top:0"></p>
+      <button class="btn" id="p-set"></button>
+      <button class="btn secondary hidden" id="p-off">Pincode uitzetten</button>
+    </div>
+    <div class="card">
+      <h2>🏷️ Categorieën</h2>
+      <p class="hint" style="margin-top:0">Voeg categorieën toe, geef ze een andere naam of verberg wat je niet gebruikt. Geldt voor <b id="c-modelabel"></b>.</p>
+      <div class="toggle" style="margin-bottom:6px">
+        <button id="cm-out" class="on-out">Uitgaven</button>
+        <button id="cm-in">Inkomsten</button>
+      </div>
+      <div id="cm-list"></div>
+      <h3 style="margin-top:18px">Nieuwe categorie</h3>
+      <label for="cm-name">Naam (begin gerust met een emoji)</label>
+      <input id="cm-name" placeholder="Bijv. 🐶 Huisdier" autocomplete="off">
+      <label for="cm-group">In groep</label>
+      <select id="cm-group"></select>
+      <button class="btn" id="cm-add">Categorie toevoegen</button>
+    </div>
   </section>
 </main>
 
 <div class="toast" id="toast"></div>
+<div id="lock" class="hidden" style="position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px">
+  <div style="font-size:44px">🔒</div>
+  <h2 id="lock-title" style="font-size:20px;margin:10px 0 18px;text-align:center">Voer je pincode in</h2>
+  <div id="lock-dots" style="display:flex;gap:16px;margin-bottom:28px"></div>
+  <div id="lock-pad" style="display:grid;grid-template-columns:repeat(3,76px);gap:14px"></div>
+  <button id="lock-cancel" class="hidden" style="margin-top:22px;border:0;background:none;color:var(--muted);font-size:16px">Annuleren</button>
+  <button id="lock-forgot" style="margin-top:22px;border:0;background:none;color:var(--muted);font-size:14px">Pincode vergeten?</button>
+  <p id="lock-help" class="hint hidden" style="max-width:320px;text-align:center"></p>
+</div>
 <div id="report" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:49;padding:16px">
   <div class="card" style="max-width:420px;width:100%;margin:0;max-height:86vh;overflow-y:auto">
     <div id="report-body"></div>
@@ -273,14 +314,14 @@
   <button data-view="list"><span>📋</span>Lijst</button>
   <button data-view="fixed"><span>🔁</span>Vast</button>
   <button data-view="goals"><span>🎯</span>Doelen</button>
-  <button data-view="backup"><span>💾</span>Back-up</button>
+  <button data-view="backup"><span>⚙️</span>Meer</button>
 </nav>
 
 <script>
 // Verhoog dit getal bij elke nieuwe versie; de app vergelijkt het met de versie op GitHub
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 // ---------- Categorieën ----------
-const CATS = { prive: {
+const BASE_CATS = { prive: {
   inkomst: [
     { group: "Inkomsten", items: [
       ["salaris", "💼 Salaris"], ["bonus", "🎯 Bonus / provisie"], ["vakantiegeld", "🌴 Vakantiegeld"],
@@ -318,9 +359,38 @@ const CATS = { prive: {
       ["z_opleiding", "🎓 Opleiding"], ["z_kantoor", "🖇️ Kantoorartikelen"], ["z_overig", "❓ Overige kosten"] ] }
   ]
 } };
+// Eigen aanpassingen: extra categorieën, verborgen categorieën en nieuwe namen
+const CKEY = "kasboek_cats_v1";
+let catCfg = (() => { try { return JSON.parse(localStorage.getItem(CKEY)) || {}; } catch { return {}; } })();
+catCfg.custom ||= []; catCfg.hidden ||= []; catCfg.renamed ||= {};
+const OWN_GROUP = "⭐ Eigen categorieën";
+let CATS;
 const CAT_LABEL = {}, CAT_GROUP = {}, VERMOGEN = new Set();
-for (const book in CATS) for (const type in CATS[book]) for (const g of CATS[book][type]) for (const [id, label] of g.items) {
-  CAT_LABEL[id] = label; CAT_GROUP[id] = g.group; if (g.vermogen) VERMOGEN.add(id);
+function buildCats() {
+  CATS = JSON.parse(JSON.stringify(BASE_CATS));
+  for (const book in CATS) for (const type in CATS[book]) for (const g of CATS[book][type])
+    g.items = g.items.map(([id, l]) => [id, catCfg.renamed[id] || l]);
+  for (const c of catCfg.custom) {
+    const list = CATS[c.book][c.type];
+    let g = list.find(x => x.group === c.group) || list.find(x => x.group === OWN_GROUP);
+    if (!g) { g = { group: OWN_GROUP, items: [] }; list.push(g); }
+    g.items.push([c.id, catCfg.renamed[c.id] || c.label]);
+  }
+  for (const k in CAT_LABEL) delete CAT_LABEL[k];
+  for (const k in CAT_GROUP) delete CAT_GROUP[k];
+  VERMOGEN.clear();
+  for (const book in CATS) for (const type in CATS[book]) for (const g of CATS[book][type]) for (const [id, label] of g.items) {
+    CAT_LABEL[id] = label; CAT_GROUP[id] = g.group; if (g.vermogen) VERMOGEN.add(id);
+  }
+}
+buildCats();
+const isHidden = id => catCfg.hidden.includes(id);
+// Keuzelijst met optgroups, zonder verborgen categorieën (de gekozen waarde blijft wel staan)
+function optGroups(groups, keep) {
+  return groups.map(g => {
+    const items = g.items.filter(([id]) => !isHidden(id) || id === keep);
+    return items.length ? `<optgroup label="${esc(g.group)}">${items.map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join("")}</optgroup>` : "";
+  }).join("");
 }
 // Privé of zakelijk (oude gegevens zonder label zijn privé)
 let mode = (() => { try { return localStorage.getItem("kasboek_mode") || "prive"; } catch { return "prive"; } })();
@@ -365,10 +435,7 @@ function parseAmount(s) {
 
 // ---------- Toevoegen ----------
 let type = "uitgave";
-function catOptions(t) {
-  return CATS[mode][t].map(g =>
-    `<optgroup label="${esc(g.group)}">${g.items.map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join("")}</optgroup>`).join("");
-}
+function catOptions(t, keep) { return optGroups(CATS[mode][t], keep); }
 function fillCats() { $("#f-cat").innerHTML = catOptions(type); fillGoalPick("f"); }
 // "Voor doel"-keuze: alleen tonen bij Sparen/Beleggen als er een passend doel is
 function fillGoalPick(p) {
@@ -403,7 +470,7 @@ function startEditTx(id) {
   const t = txs.find(x => x.id === id); if (!t) return;
   if (bookOf(t) !== mode) setMode(bookOf(t));
   showView("add");
-  setType(t.type); $("#f-cat").value = t.cat; fillGoalPick("f");
+  setType(t.type); $("#f-cat").innerHTML = catOptions(t.type, t.cat); $("#f-cat").value = t.cat; fillGoalPick("f");
   if (t.goal) $("#f-goal").value = t.goal;
   $("#f-amount").value = centsToInput(t.amount); $("#f-date").value = t.date; $("#f-note").value = t.note || "";
   editTx = id;
@@ -631,7 +698,7 @@ function resetRuleForm() {
 }
 function startEditRule(id) {
   const r = rules.find(x => x.id === id); if (!r) return;
-  setRType(r.type); $("#r-cat").value = r.cat; fillGoalPick("r");
+  setRType(r.type); $("#r-cat").innerHTML = catOptions(r.type, r.cat); $("#r-cat").value = r.cat; fillGoalPick("r");
   if (r.goal) $("#r-goal").value = r.goal;
   $("#r-amount").value = centsToInput(r.amount); $("#r-day").value = r.day; $("#r-note").value = r.note || "";
   $("#r-every").value = String(r.every || 1);
@@ -722,7 +789,7 @@ function celebrateNew(before) {
   $("#party").classList.remove("hidden");
 }
 $("#party-ok").onclick = () => $("#party").classList.add("hidden");
-const KINDS = { sparen: "🐷 Spaardoel", beleggen: "📈 Belegdoel", maandbeleg: "📅 Maandelijks beleggen", schuld: "💸 Schuld aflossen", budget: "🚦 Budgetlimiet" };
+const KINDS = { sparen: "🐷 Spaardoel", beleggen: "📈 Belegdoel", maandbeleg: "💹 Maandelijks beleggen", schuld: "💸 Schuld aflossen", budget: "🚦 Budgetlimiet" };
 const DEBT_CATS = ["duo", "aflossing"];
 function fillGoalForm() {
   const kinds = mode === "zakelijk" ? ["budget"] : ["sparen", "beleggen", "maandbeleg", "schuld", "budget"];
@@ -733,8 +800,7 @@ function fillGoalForm() {
   const curCat = $("#g-cat").value;
   $("#g-cat").innerHTML = debt
     ? DEBT_CATS.map(id => `<option value="${id}">${esc(CAT_LABEL[id])}</option>`).join("")
-    : CATS[mode].uitgave.filter(g => !g.vermogen).map(g =>
-      `<optgroup label="${esc(g.group)}">${g.items.map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join("")}</optgroup>`).join("");
+    : optGroups(CATS[mode].uitgave.filter(g => !g.vermogen));
   if ([...$("#g-cat").options].some(o => o.value === curCat)) $("#g-cat").value = curCat;
   $("#g-namewrap").classList.toggle("hidden", budget || monthly);
   $("#g-catwrap").classList.toggle("hidden", !budget && !debt);
@@ -944,7 +1010,7 @@ function renderGoals() {
 
 // ---------- Back-up ----------
 $("#b-export").onclick = () => {
-  const blob = new Blob([JSON.stringify({ app: "kasboek", version: 4, transactions: txs, rules, goals, saldo }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ app: "kasboek", version: 5, transactions: txs, rules, goals, saldo, categories: catCfg }, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = `kasboek-backup-${today()}.json`; a.click();
   try { localStorage.setItem("kasboek_lastbackup", today()); } catch {}
@@ -962,6 +1028,10 @@ $("#b-file").onchange = async e => {
     txs = list; if (Array.isArray(data.rules)) rules = data.rules;
     if (Array.isArray(data.goals)) goals = data.goals;
     if (data.saldo && typeof data.saldo === "object") saldo = data.saldo;
+    if (data.categories && typeof data.categories === "object") {
+      catCfg = { custom: data.categories.custom || [], hidden: data.categories.hidden || [], renamed: data.categories.renamed || {} };
+      saveCats();
+    }
     save(); render(); toast("Back-up teruggezet");
   } catch { toast("Ongeldig back-upbestand"); }
   e.target.value = "";
@@ -1017,7 +1087,7 @@ function showReport(ym) {
       : row(`${g.kind === "sparen" ? "🐷" : "📈"} ${esc(g.name)}`, `${m ? "+ " + eur(m) : "€ 0"} · ${Math.min(100, Math.floor(tot / g.target * 100))}%`, m ? "sv" : "");
   });
   const mb = goals.find(g => bookOf(g) === mode && g.kind === "maandbeleg");
-  if (mb) { const d = sumCat("beleggen", ym); lines.push(row(`📅 Maandelijks beleggen`, `${eur(d)} / ${eur(mb.target)} ${d >= mb.target ? "✅" : ""}`)); }
+  if (mb) { const d = sumCat("beleggen", ym); lines.push(row(`💹 Maandelijks beleggen`, `${eur(d)} / ${eur(mb.target)} ${d >= mb.target ? "✅" : ""}`)); }
   if (lines.length) h += `<h3>🎯 Doelen deze maand</h3>` + lines.join("");
   // Tip
   if (rest > 0 && mode === "prive") h += `<div class="alert info" style="margin:14px 0 0">💡 Je hield ${eur(rest)} over. Zet het naar je spaarrekening of je potje voor onvoorziene kosten.</div>`;
@@ -1037,6 +1107,177 @@ function autoReport() {
   if (!$("#party").classList.contains("hidden")) return;
   showReport(prev);
 }
+
+// ---------- Pincode ----------
+// Let op: dit is een schermvergrendeling tegen meekijkers, geen versleuteling van je gegevens.
+const PKEY = "kasboek_pin";
+const getPin = () => { try { return JSON.parse(localStorage.getItem(PKEY)); } catch { return null; } };
+async function hashPin(pin, salt) {
+  const data = new TextEncoder().encode(salt + ":" + pin);
+  if (window.crypto && crypto.subtle) return [...new Uint8Array(await crypto.subtle.digest("SHA-256", data))].map(b => b.toString(16).padStart(2, "0")).join("");
+  let h = 0; for (const b of data) h = (h * 31 + b) | 0; return "x" + h;
+}
+let lockMode = null, entry = "", firstPin = "", hiddenAt = 0;
+function drawDots() { $("#lock-dots").innerHTML = [0, 1, 2, 3].map(i => `<i class="${i < entry.length ? "on" : ""}"></i>`).join(""); }
+$("#lock-pad").innerHTML = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"]
+  .map(k => k ? `<button data-k="${k}">${k}</button>` : "<span></span>").join("");
+function openLock(m) {
+  lockMode = m; entry = ""; firstPin = "";
+  $("#lock-title").textContent = { unlock: "Voer je pincode in", set1: "Kies een pincode van 4 cijfers", off: "Voer je huidige pincode in" }[m];
+  $("#lock-cancel").classList.toggle("hidden", m === "unlock");
+  $("#lock-forgot").classList.toggle("hidden", m === "set1");
+  $("#lock-help").classList.add("hidden");
+  drawDots(); $("#lock").classList.remove("hidden");
+}
+const closeLock = () => { $("#lock").classList.add("hidden"); lockMode = null; };
+function wrong(msg) {
+  const d = $("#lock-dots"); d.classList.remove("shake"); void d.offsetWidth; d.classList.add("shake");
+  entry = ""; drawDots(); if (msg) $("#lock-title").textContent = msg;
+}
+async function pinComplete() {
+  const p = getPin();
+  if (lockMode === "unlock" || lockMode === "off") {
+    if (p && await hashPin(entry, p.salt) === p.hash) {
+      if (lockMode === "off") { localStorage.removeItem(PKEY); toast("Pincode uitgezet"); renderPinCard(); }
+      closeLock();
+    } else wrong("Onjuiste pincode, probeer opnieuw");
+  } else if (lockMode === "set1") {
+    firstPin = entry; entry = ""; lockMode = "set2"; $("#lock-title").textContent = "Herhaal je pincode"; drawDots();
+  } else if (lockMode === "set2") {
+    if (entry !== firstPin) { lockMode = "set1"; firstPin = ""; wrong("Niet gelijk. Kies opnieuw een pincode"); return; }
+    const salt = newId();
+    localStorage.setItem(PKEY, JSON.stringify({ salt, hash: await hashPin(entry, salt) }));
+    closeLock(); toast("Pincode ingesteld 🔒"); renderPinCard();
+  }
+}
+$("#lock-pad").onclick = e => {
+  const k = e.target.dataset && e.target.dataset.k; if (!k || !lockMode) return;
+  if (k === "⌫") entry = entry.slice(0, -1); else if (entry.length < 4) entry += k;
+  drawDots(); if (entry.length === 4) setTimeout(pinComplete, 120);
+};
+$("#lock-cancel").onclick = closeLock;
+$("#lock-forgot").onclick = () => {
+  $("#lock-help").innerHTML = "Je pincode kan niet worden teruggehaald. Verwijder de app van je beginscherm, zet hem opnieuw op je beginscherm via Safari en zet daarna je back-up terug. Zonder back-up ben je je gegevens dan kwijt.";
+  $("#lock-help").classList.remove("hidden");
+};
+function renderPinCard() {
+  const on = !!getPin();
+  $("#p-status").textContent = on ? "Aan: de app vraagt om je pincode bij openen en als je langer dan 1 minuut weg was."
+    : "Uit: iedereen die je telefoon gebruikt kan de app openen.";
+  $("#p-set").textContent = on ? "Pincode wijzigen" : "Pincode instellen";
+  $("#p-off").classList.toggle("hidden", !on);
+}
+$("#p-set").onclick = () => openLock("set1");
+$("#p-off").onclick = () => openLock("off");
+if (getPin()) openLock("unlock");
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) hiddenAt = Date.now();
+  else if (getPin() && !lockMode && hiddenAt && Date.now() - hiddenAt > 60e3) openLock("unlock");
+});
+
+// ---------- Categorieën beheren ----------
+let cmType = "uitgave";
+function saveCats() { try { localStorage.setItem(CKEY, JSON.stringify(catCfg)); } catch {} buildCats(); fillCats(); setRType(rType); }
+const catUsed = id => txs.some(t => t.cat === id) || rules.some(r => r.cat === id) || goals.some(g => g.cat === id);
+function renderCatManager() {
+  $("#c-modelabel").textContent = mode === "zakelijk" ? "💼 Zakelijk" : "👤 Privé";
+  $("#cm-out").className = cmType === "uitgave" ? "on-out" : ""; $("#cm-in").className = cmType === "inkomst" ? "on-in" : "";
+  const groups = CATS[mode][cmType];
+  $("#cm-list").innerHTML = groups.map(g => `<h3>${esc(g.group)}</h3>` + g.items.map(([id, l]) => {
+    const custom = catCfg.custom.some(c => c.id === id), off = isHidden(id);
+    return `<div class="cm-row${off ? " off" : ""}"><span>${esc(l)}${off ? " (verborgen)" : ""}</span><div>
+      <button data-a="ren" data-id="${id}" aria-label="Hernoemen">✏️</button>
+      <button data-a="hide" data-id="${id}" aria-label="${off ? "Tonen" : "Verbergen"}">${off ? "👁️" : "🙈"}</button>
+      ${custom ? `<button data-a="del" data-id="${id}" aria-label="Verwijderen">🗑️</button>` : ""}</div></div>`;
+  }).join("")).join("");
+  const names = [...new Set([...groups.filter(g => !g.vermogen).map(g => g.group), OWN_GROUP])];
+  $("#cm-group").innerHTML = names.map(n => `<option>${esc(n)}</option>`).join("");
+  $("#cm-group").value = OWN_GROUP;
+  $$("#cm-list button").forEach(b => b.onclick = () => {
+    const id = b.dataset.id;
+    if (b.dataset.a === "ren") {
+      const n = prompt("Nieuwe naam (begin gerust met een emoji):", CAT_LABEL[id]);
+      if (n === null || !n.trim()) return;
+      catCfg.renamed[id] = n.trim(); saveCats(); renderCatManager(); toast("Naam aangepast");
+    } else if (b.dataset.a === "hide") {
+      catCfg.hidden = isHidden(id) ? catCfg.hidden.filter(x => x !== id) : [...catCfg.hidden, id];
+      saveCats(); renderCatManager(); toast(isHidden(id) ? "Verborgen. Je oude boekingen blijven staan" : "Weer zichtbaar");
+    } else if (b.dataset.a === "del") {
+      if (catUsed(id)) { toast("Deze categorie is in gebruik. Verberg hem in plaats daarvan"); return; }
+      if (!confirm("Deze categorie verwijderen?")) return;
+      catCfg.custom = catCfg.custom.filter(c => c.id !== id); delete catCfg.renamed[id];
+      saveCats(); renderCatManager(); toast("Categorie verwijderd");
+    }
+  });
+}
+$("#cm-out").onclick = () => { cmType = "uitgave"; renderCatManager(); };
+$("#cm-in").onclick = () => { cmType = "inkomst"; renderCatManager(); };
+$("#cm-add").onclick = () => {
+  const label = $("#cm-name").value.trim();
+  if (!label) { toast("Geef de categorie een naam"); $("#cm-name").focus(); return; }
+  catCfg.custom.push({ id: "c_" + newId(), book: mode, type: cmType, group: $("#cm-group").value, label });
+  $("#cm-name").value = ""; saveCats(); renderCatManager(); toast("Categorie toegevoegd");
+};
+
+// ---------- Jaaroverzicht ----------
+function showYear(y) {
+  const inY = (t, yy) => bookOf(t) === mode && t.date.startsWith(String(yy));
+  const sum = a => a.reduce((s, t) => s + t.amount, 0);
+  const list = txs.filter(t => inY(t, y));
+  const outL = list.filter(t => t.type === "uitgave" && !VERMOGEN.has(t.cat));
+  const inc = sum(list.filter(t => t.type === "inkomst")), out = sum(outL);
+  const sv = sum(list.filter(t => t.type === "uitgave" && VERMOGEN.has(t.cat)));
+  const rest = inc - out - sv;
+  const row = (l, v, cls = "") => `<div class="row"><span>${l}</span><b class="${cls}">${v}</b></div>`;
+  const navBtn = (yy, ch) => `<button class="yr" data-y="${yy}" style="border:1px solid var(--line);background:var(--card);color:var(--text);width:40px;height:40px;border-radius:10px;font-size:18px">${ch}</button>`;
+  let h = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      ${navBtn(y - 1, "‹")}<h2 style="margin:0;font-size:20px">Jaaroverzicht ${y}</h2>${navBtn(y + 1, "›")}</div>
+    <p class="hint" style="text-align:center;margin:0 0 10px">${mode === "zakelijk" ? "💼 Zakelijk" : "👤 Privé"}</p>`;
+  if (!list.length) { $("#report-body").innerHTML = h + `<div class="empty">Geen transacties in ${y}.</div>`; bindYear(); $("#report").classList.remove("hidden"); return; }
+  h += `<h3>💶 Totaal ${y}</h3>` + row("Inkomsten", "+ " + eur(inc), "in") + row("Uitgaven", "− " + eur(out), "out") +
+    (sv ? row("Gespaard / belegd", eur(sv), "sv") : "") + row("<b>Over</b>", (rest < 0 ? "− " : "+ ") + eur(Math.abs(rest)), rest < 0 ? "out" : "in");
+  const prevOut = sum(txs.filter(t => inY(t, y - 1) && t.type === "uitgave" && !VERMOGEN.has(t.cat)));
+  if (prevOut) {
+    const d = out - prevOut;
+    h += `<p class="hint" style="margin:6px 0 0">${d > 0 ? "📈" : "📉"} ${eur(Math.abs(d))} ${d > 0 ? "méér" : "minder"} uitgegeven dan in ${y - 1}.</p>`;
+  }
+  // Uitgaven per maand
+  const months = Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
+  const vals = months.map(ym => sum(outL.filter(t => t.date.startsWith(ym))));
+  const max = Math.max(...vals, 1), H = 100, active = vals.filter(v => v > 0);
+  const avg = active.length ? out / active.length : 0;
+  h += `<h3>📊 Uitgaven per maand</h3><div class="chart" style="height:120px;gap:4px">${vals.map(v =>
+      `<div class="col"><div class="b" style="height:${Math.round(v / max * H)}px;opacity:1"></div></div>`).join("")}
+      ${avg ? `<div class="avg" style="bottom:${Math.round(avg / max * H)}px"></div>` : ""}</div>
+    <div class="chart-x" style="gap:4px">${months.map(ym => `<span style="font-size:10px">${new Date(ym + "-01T12:00").toLocaleDateString("nl-NL", { month: "narrow" })}</span>`).join("")}</div>
+    <p class="hint" style="margin:6px 0 0">Gemiddeld <b>${eur(Math.round(avg))}</b> per maand (stippellijn), over ${active.length} ${active.length === 1 ? "maand" : "maanden"}.</p>`;
+  // Top 5
+  const byCat = {}; for (const t of outL) byCat[t.cat] = (byCat[t.cat] || 0) + t.amount;
+  const top = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  if (top.length) h += `<h3>🏆 Top 5 uitgaven</h3>` + top.map(([c, v], i) =>
+    row(`${i + 1}. ${esc(CAT_LABEL[c] || c)} <span style="font-size:12px;color:var(--muted)">${Math.round(v / out * 100)}%</span>`, eur(v))).join("");
+  // Budgetten: hoeveel maanden gehaald
+  const nowYm = today().slice(0, 7);
+  const bl = goals.filter(g => bookOf(g) === mode && g.kind === "budget").map(g => {
+    const ms = months.filter(ym => ym <= nowYm && (!g.created || ym >= g.created.slice(0, 7)));
+    if (!ms.length) return "";
+    const ok = ms.filter(ym => spentInMonth(g.cat, ym) <= effTarget(g, ym)).length;
+    return row(`${ok === ms.length ? "✅" : "🚦"} ${esc(CAT_LABEL[g.cat])}`, `${ok} van ${ms.length} mnd`);
+  }).join("");
+  if (bl) h += `<h3>🚦 Budgetten gehaald</h3>` + bl;
+  // Doelen
+  const gl = goals.filter(g => bookOf(g) === mode && ["sparen", "beleggen", "schuld"].includes(g.kind)).map(g => {
+    const m = list.filter(t => t.goal === g.id).reduce((s, t) => s + t.amount, 0);
+    if (!m) return "";
+    return g.kind === "schuld" ? row(`💸 ${esc(g.name)}`, `${eur(m)} afgelost`)
+      : row(`${g.kind === "sparen" ? "🐷" : "📈"} ${esc(g.name)}`, `+ ${eur(m)}`, "sv");
+  }).join("");
+  if (gl) h += `<h3>🎯 Doelen in ${y}</h3>` + gl;
+  $("#report-body").innerHTML = h; bindYear();
+  $("#report").classList.remove("hidden");
+}
+function bindYear() { $$("#report-body .yr").forEach(b => b.onclick = () => showYear(+b.dataset.y)); }
+$("#o-year").onclick = () => showYear(+month.slice(0, 4));
 
 // ---------- Updates ----------
 // Haalt index.html zonder cache op; is daar een hoger versienummer, dan herladen met ?v= zodat iOS de oude kopie overslaat.
@@ -1060,7 +1301,7 @@ $("#u-check").onclick = () => checkUpdate(true);
 $("#u-label").textContent = `Kasboek · versie ${APP_VERSION}`;
 
 // ---------- Navigatie ----------
-const TITLES = { add: "Toevoegen", overview: "Overzicht", list: "Transacties", fixed: "Vaste posten", goals: "Doelen", backup: "Back-up" };
+const TITLES = { add: "Toevoegen", overview: "Overzicht", list: "Transacties", fixed: "Vaste posten", goals: "Doelen", backup: "Meer" };
 let view = "add";
 function showView(v) {
   if (view === "add" && v !== "add" && editTx) resetAddForm();
@@ -1081,6 +1322,7 @@ function render() {
   if (view === "fixed") renderRules();
   if (view === "goals") renderGoals();
   if (view === "add") { renderAlerts(); renderQuick(); }
+  if (view === "backup") { renderPinCard(); renderCatManager(); }
 }
 // ---------- Privé / Zakelijk ----------
 function setMode(m) {
