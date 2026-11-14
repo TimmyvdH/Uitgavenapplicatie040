@@ -104,6 +104,7 @@
 </header>
 
 <main>
+  <div id="update"></div>
   <!-- TOEVOEGEN -->
   <section id="view-add">
     <div id="alerts"></div>
@@ -239,7 +240,8 @@
       <button class="btn" id="b-export">Back-up downloaden</button>
       <button class="btn secondary" id="b-import">Back-up terugzetten</button>
       <input type="file" id="b-file" accept="application/json,.json" class="hidden">
-      <p class="hint" style="text-align:center;margin:14px 0 0">Kasboek · versie 9 (14 nov 2026)</p>
+      <button class="btn secondary" id="u-check">🔄 Zoek naar updates</button>
+      <p class="hint" style="text-align:center;margin:14px 0 0" id="u-label"></p>
     </div>
   </section>
 </main>
@@ -264,6 +266,8 @@
 </nav>
 
 <script>
+// Verhoog dit getal bij elke nieuwe versie; de app vergelijkt het met de versie op GitHub
+const APP_VERSION = 10;
 // ---------- Categorieën ----------
 const CATS = { prive: {
   inkomst: [
@@ -933,6 +937,27 @@ $("#b-file").onchange = async e => {
   e.target.value = "";
 };
 
+// ---------- Updates ----------
+// Haalt index.html zonder cache op; is daar een hoger versienummer, dan herladen met ?v= zodat iOS de oude kopie overslaat.
+// Je gegevens blijven staan: ze horen bij het webadres, niet bij de versie.
+let lastCheck = 0;
+async function checkUpdate(manual) {
+  if (!manual && Date.now() - lastCheck < 60e3) return;
+  lastCheck = Date.now();
+  try {
+    const res = await fetch(location.pathname + "?check=" + Date.now(), { cache: "no-store" });
+    const m = (await res.text()).match(/const APP_VERSION = (\d+)/);
+    const latest = m ? +m[1] : APP_VERSION;
+    if (latest > APP_VERSION) {
+      $("#update").innerHTML = `<div class="alert info">✨ Er is een nieuwe versie van Kasboek (versie ${latest}).<br><button id="u-go">Nu bijwerken</button></div>`;
+      $("#u-go").onclick = () => location.replace(location.pathname + "?v=" + latest);
+      if (manual) toast("Nieuwe versie gevonden");
+    } else if (manual) toast("Je hebt de nieuwste versie ✓");
+  } catch { if (manual) toast("Geen verbinding, probeer het later opnieuw"); }
+}
+$("#u-check").onclick = () => checkUpdate(true);
+$("#u-label").textContent = `Kasboek · versie ${APP_VERSION}`;
+
 // ---------- Navigatie ----------
 const TITLES = { add: "Toevoegen", overview: "Overzicht", list: "Transacties", fixed: "Vaste posten", goals: "Doelen", backup: "Back-up" };
 let view = "add";
@@ -972,8 +997,9 @@ $$("#modes button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
 
 runRules();
 setMode(mode);
+checkUpdate();
 // Bij heropenen van de app (bijv. de volgende dag) opnieuw controleren
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { runRules(); render(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { runRules(); render(); checkUpdate(); } });
 </script>
 </body>
 </html>
